@@ -361,6 +361,8 @@ def extract_name(text):
 def match_doctor(text, docs):
     t = text.strip().lower()
     t = re.sub(r"^dr\.?\s*", "", t)
+    if t.isdigit() and 1 <= int(t) <= len(docs):      # NEW
+        return docs[int(t)-1]                          # NEW
     for d in docs:
         name_clean = re.sub(r"^dr\.?\s*", "", d["name"].lower())
         if t == name_clean: return d
@@ -531,7 +533,7 @@ def is_info_question(text: str) -> bool:
     """True if the message looks like a general info query, not a booking field answer."""
     tl = text.lower()
     asks_about_directory = re.search(
-        r"\b(doctors?|specialists?|departments?|specialit|qualification|experience)\b", tl
+        r"\b(doctors?|dr|specialists?|departments?|specialit|qualification|experience)\b", tl
     ) and re.search(
         r"\b(list|show|give|who|which|names?|details|about|work|available|tell|do you have)\b", tl
     )
@@ -1008,6 +1010,63 @@ def opportunistic_extract(text: str, d: dict, current_step: str) -> str:
 STEP_ORDER = ["name", "phone", "email", "dept", "doctor", "date", "slot"]
 
 
+# CHANGE-ANYTHING SUPPORT ---------------------------------------------------
+# Words meaning "I want to change something" + which field they mean.
+CHANGE_VERB_RE = re.compile(
+    r"\b(change|another|different|edit|update|modify|wrong|incorrect|switch|"
+    r"go back|redo|re-?enter|reschedule|select another|choose another)\b", re.I)
+# Order matters: the first match wins.
+CHANGE_FIELDS = [
+    ("dept",   re.compile(r"\b(department|dept|speciality|specialty)\b", re.I)),
+    ("doctor", re.compile(r"\b(doctor|doc)\b", re.I)),
+    ("date",   re.compile(r"\b(date|day)\b", re.I)),
+    ("slot",   re.compile(r"\b(time|slot)\b", re.I)),
+    ("email",  re.compile(r"\b(email|e-mail|mail)\b", re.I)),
+    ("phone",  re.compile(r"\b(phone|mobile|number|contact)\b", re.I)),
+    ("name",   re.compile(r"\bname\b", re.I)),
+]
+# What must be cleared when a field changes (later fields depend on earlier ones).
+CHANGE_CLEARS = {
+    "name":   ["name"],
+    "phone":  ["phone"],
+    "email":  ["email"],
+    "dept":   ["dept_id", "dept_name", "doctor_id", "doctor_name", "apt_date", "slot"],
+    "doctor": ["doctor_id", "doctor_name", "apt_date", "slot"],
+    "date":   ["apt_date", "slot"],
+    "slot":   ["slot"],
+}
+
+# Returns which field the user wants to change ("dept", "doctor", ...) or None.
+def detect_change_field(text: str):
+    if len(text.split()) > 12 or not CHANGE_VERB_RE.search(text):
+        return None
+    for field, rx in CHANGE_FIELDS:
+        if rx.search(text):
+            return field
+    return None
+
+# Clears that field (and the ones that depend on it), asks the question again,
+# and after the user answers the normal flow moves forward / back to the summary.
+def start_field_change(s: dict, field: str, message: str):
+    d = s["data"]
+    for key in CHANGE_CLEARS[field]:
+        d.pop(key, None)
+    d.pop("booking_key", None)
+    s["state"] = "booking"
+    s["step"]  = field
+    # If the message already contains the new value ("change my phone to 98..."), use it directly.
+    if field in ("phone", "email", "date") and validate_step(field, message, d) is None:
+        s["step"] = next_step_after(field, d)
+        if all_fields_done(d) or s["step"] == "__done__":
+            d["booking_key"] = secrets.token_urlsafe(32)
+            s["state"], s["step"] = "confirm", "__done__"
+            return "Updated.\n\n" + confirmation_text(d), ["Yes, confirm", "No, cancel"]
+        prompt, options = ask_for(s["step"], d)
+        return "Updated. " + prompt, options
+    prompt, options = ask_for(field, d)
+    return "Sure, let's change that. " + prompt, options
+
+
 # Returns the first booking step that has no value yet (or "__done__" if everything is filled).
 def first_missing_step(d: dict) -> str:
     keys = {
@@ -1203,6 +1262,16 @@ def chat_turn(sid: str, user_msg: str) -> dict:
     d = s["data"]
     step = s["step"]
     lower = message.lower()
+
+    # User wants to change any already-given field (works in booking and confirm states).
+    if s["state"] in ("booking", "confirm"):
+        change_field = detect_change_field(message)
+        if change_field and not match_any_department(message):
+            reply, options = start_field_change(s, change_field, message)
+            record_turn(s, message, reply)
+            return {"reply": reply, "options": options}
+
+
 
     # Resolve department changes before interpreting text as a doctor name or a field value.
     # DEPARTMENT CHANGE: if the user names a (different) department during booking, switch to it.
