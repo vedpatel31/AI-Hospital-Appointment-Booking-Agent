@@ -1,0 +1,451 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book an Appointment — City Care Hospital</title>
+<meta name="description" content="Chat with Aria, your AI appointment assistant at City Care Hospital, to book a doctor quickly and easily.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* COLOR THEME: all colors, radius sizes used by the page are defined here as variables. */
+  :root {
+    --bg:          #0d1117;
+    --surface:     #161b22;
+    --surface2:    #1c2433;
+    --border:      #30363d;
+    --brand:       #3b82f6;
+    --brand-glow:  rgba(59,130,246,0.25);
+    --brand-dark:  #2563eb;
+    --green:       #22c55e;
+    --text:        #e6edf3;
+    --muted:       #8b949e;
+    --bot-bg:      #1e2d40;
+    --user-bg:     linear-gradient(135deg,#3b82f6,#6366f1);
+    --radius:      18px;
+    --radius-sm:   10px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%; width: 100%;
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+  }
+
+  /* ── layout ── */
+  /* PAGE LAYOUT: full-screen dark background that centers the chat box. */
+  .shell {
+    display: flex;
+    height: 100vh;
+    justify-content: center;
+    align-items: center;
+    padding: 16px;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 0%,  rgba(59,130,246,.12) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 80% 100%, rgba(99,102,241,.10) 0%, transparent 60%),
+      var(--bg);
+  }
+
+  /* The chat box (card) itself: width, height, border and shadow. */
+  .chat-card {
+    width: 100%;
+    max-width: 620px;
+    height: min(780px, 96vh);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 24px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.04);
+  }
+
+  /* ── header ── */
+  /* CHAT HEADER: avatar, title/subtitle and the status dot. */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .avatar {
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    box-shadow: 0 0 12px rgba(99,102,241,.4);
+    flex-shrink: 0;
+  }
+
+  .header-info h1 { font-size: .95rem; font-weight: 600; color: var(--text); }
+  .header-info p  { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+
+  /* Status dot: green = AI ready, yellow (.loading) = model loading, red (.error) = failed. */
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    margin-left: auto;
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s infinite;
+    flex-shrink: 0;
+  }
+  .status-dot.loading { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+  .status-dot.error   { background: #ef4444; box-shadow: 0 0 6px #ef4444; animation: none; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: .4; }
+  }
+
+  /* ── message area ── */
+  /* MESSAGE AREA: scrollable list where all chat messages appear. */
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    scroll-behavior: smooth;
+  }
+
+  #log::-webkit-scrollbar { width: 5px; }
+  #log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .msg-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+  .msg-row.bot { flex-direction: row; }
+  .msg-row.me  { flex-direction: row-reverse; }
+
+  .msg-icon {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+    align-self: flex-end;
+  }
+
+  /* Message bubble shape/text style (shared by bot and user messages). */
+  .bubble {
+    max-width: 78%;
+    padding: 11px 14px;
+    border-radius: var(--radius);
+    line-height: 1.55;
+    font-size: .9rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    animation: fadeUp .25s ease both;
+  }
+
+  /* BOT MESSAGE style (left side, dark blue). */
+  .bot .bubble {
+    background: var(--bot-bg);
+    border: 1px solid rgba(59,130,246,.15);
+    border-bottom-left-radius: 4px;
+    color: var(--text);
+  }
+
+  /* USER MESSAGE style (right side, blue-purple gradient). */
+  .me .bubble {
+    background: var(--user-bg);
+    border-bottom-right-radius: 4px;
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(59,130,246,.25);
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* typing indicator */
+  /* TYPING INDICATOR: the three bouncing dots shown while waiting for the bot's reply. */
+  .typing-row { display: flex; align-items: flex-end; gap: 8px; }
+  .typing-bubble {
+    background: var(--bot-bg);
+    border: 1px solid rgba(59,130,246,.15);
+    border-radius: var(--radius);
+    border-bottom-left-radius: 4px;
+    padding: 13px 16px;
+    display: flex; gap: 5px; align-items: center;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted);
+    animation: bounce .8s infinite;
+  }
+  .dot:nth-child(2) { animation-delay: .15s; }
+  .dot:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce {
+    0%, 80%, 100% { transform: translateY(0); }
+    40%           { transform: translateY(-5px); }
+  }
+
+  /* chips */
+  /* CHIPS: quick-reply buttons shown under the bot's message (options sent by the backend). */
+  .chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    padding-left: 36px;
+    animation: fadeUp .25s ease both;
+  }
+  .chip {
+    border: 1px solid rgba(59,130,246,.5);
+    color: #93c5fd;
+    background: rgba(59,130,246,.08);
+    border-radius: 999px;
+    padding: 6px 13px;
+    font-size: .82rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .15s, color .15s, transform .1s;
+  }
+  .chip:hover {
+    background: var(--brand);
+    color: #fff;
+    border-color: var(--brand);
+    transform: translateY(-1px);
+  }
+  .chip:active { transform: translateY(0); }
+
+  /* ── input area ── */
+  /* INPUT AREA at the bottom: text box + send button. */
+  .input-area {
+    display: flex;
+    gap: 10px;
+    padding: 14px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--surface2);
+    flex-shrink: 0;
+  }
+
+  #inp {
+    flex: 1;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: .9rem;
+    font-family: inherit;
+    transition: border-color .2s, box-shadow .2s;
+    outline: none;
+  }
+  #inp::placeholder { color: var(--muted); }
+  #inp:focus {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-glow);
+  }
+  #inp:disabled { opacity: .5; cursor: not-allowed; }
+
+  #send-btn {
+    width: 44px; height: 44px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: var(--brand);
+    color: #fff;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    transition: background .15s, transform .1s, box-shadow .15s;
+    flex-shrink: 0;
+  }
+  #send-btn:hover  { background: var(--brand-dark); box-shadow: 0 0 12px var(--brand-glow); }
+  #send-btn:active { transform: scale(.95); }
+  #send-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+</style>
+</head>
+<body>
+<!-- PAGE STRUCTURE: centered wrapper -> chat card -> header, message log, input area. -->
+<div class="shell">
+  <div class="chat-card">
+    <!-- Chat header: bot avatar, title, and the status text/dot (updated by pollStatus() in the script). -->
+    <header>
+      <div class="avatar">🏥</div>
+      <div class="header-info">
+        <h1>Aria — Appointment Assistant</h1>
+        <p id="status-text">City Care Hospital · AI-powered booking</p>
+      </div>
+      <div class="status-dot loading" id="status-dot" title="Model loading..."></div>
+    </header>
+
+    <!-- Message area - JavaScript adds bot/user bubbles, typing dots and chips here. -->
+    <div id="log" aria-live="polite" role="log"></div>
+
+    <!-- Input area: user types the message here and presses Enter or the send button. -->
+    <div class="input-area">
+      <input id="inp" type="text" placeholder="Type your message..." maxlength="500"
+             aria-label="Your message" autocomplete="off">
+      <button id="send-btn" type="button" title="Send" aria-label="Send message">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- JAVASCRIPT: all chat behavior (talks to the Python backend in main.py). -->
+<script>
+// Shortcuts to the page elements used by the script.
+const log     = document.getElementById('log');
+const inp     = document.getElementById('inp');
+const sendBtn = document.getElementById('send-btn');
+const dotEl   = document.getElementById('status-dot');
+const stTxt   = document.getElementById('status-text');
+
+// session id
+// SESSION ID: a random id stored in the browser's sessionStorage. It is sent with every message so the
+// backend (main.py) knows which conversation it belongs to and can save/load it from the database.
+let sid = null;
+try { sid = sessionStorage.getItem('_hb_sid'); } catch(e) {}
+if (!sid) {
+  sid = (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + Math.random()).slice(0,60);
+  try { sessionStorage.setItem('_hb_sid', sid); } catch(e) {}
+}
+
+// ── LLM status poll ────────────────────────────────────────────────────────
+// STATUS CHECK: asks the backend /api/llm-status whether the AI model is ready and updates the
+// status dot/text in the header. Repeats every 3 seconds while the model is still loading.
+function pollStatus() {
+  fetch('/api/llm-status').then(r => r.json()).then(d => {
+    if (d.ready) {
+      dotEl.className = 'status-dot';
+      stTxt.textContent = 'City Care Hospital · AI ready';
+    } else if (d.status === 'error') {
+      dotEl.className = 'status-dot error';
+      stTxt.textContent = 'City Care Hospital · AI unavailable';
+    } else {
+      dotEl.className = 'status-dot loading';
+      stTxt.textContent = 'City Care Hospital · ' + (d.status === 'downloading' ? 'Downloading model...' : 'Loading model...');
+      setTimeout(pollStatus, 3000);
+    }
+  }).catch(() => setTimeout(pollStatus, 5000));
+}
+pollStatus();
+
+// ── render helpers ─────────────────────────────────────────────────────────
+// Small helpers to remove old chip buttons and the typing dots.
+function removeChips() { document.querySelectorAll('.chips-row').forEach(c => c.remove()); }
+function removeTyping() { document.querySelectorAll('.typing-row').forEach(t => t.remove()); }
+
+// Adds one message bubble to the chat (who = 'bot' or 'me'). Uses textContent so HTML in messages is not executed.
+function addMsg(text, who) {
+  const row = document.createElement('div');
+  row.className = 'msg-row ' + who;
+  if (who === 'bot') {
+    const icon = document.createElement('div');
+    icon.className = 'msg-icon';
+    icon.textContent = '🤖';
+    row.appendChild(icon);
+  }
+  const bub = document.createElement('div');
+  bub.className = 'bubble';
+  bub.textContent = text;
+  row.appendChild(bub);
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+}
+
+// Shows the bouncing 'typing...' dots while waiting for the server.
+function showTyping() {
+  const row = document.createElement('div');
+  row.className = 'typing-row';
+  const icon = document.createElement('div');
+  icon.className = 'msg-icon'; icon.textContent = '🤖';
+  const bub = document.createElement('div');
+  bub.className = 'typing-bubble';
+  [0,1,2].forEach(() => { const d = document.createElement('div'); d.className='dot'; bub.appendChild(d); });
+  row.appendChild(icon); row.appendChild(bub);
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+}
+
+// Shows the quick-reply buttons from the bot's 'options'. Clicking one sends that text as the user's message.
+function addChips(opts) {
+  if (!opts || !opts.length) return;
+  const row = document.createElement('div');
+  row.className = 'chips-row';
+  opts.forEach(o => {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.type = 'button'; b.textContent = o;
+    b.onclick = () => send(o);
+    row.appendChild(b);
+  });
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+}
+
+// Disables/enables the input box and send button while a reply is loading.
+function setBusy(busy) {
+  inp.disabled = sendBtn.disabled = busy;
+  if (!busy) { inp.focus(); }
+}
+
+// ── send ───────────────────────────────────────────────────────────────────
+// SEND A MESSAGE: shows the user's bubble, calls the backend POST /api/chat with the session id and
+// message, then shows the BOT REPLY (data.reply) and the quick-reply chips (data.options).
+// silent = true means don't show the message as a user bubble (used for the automatic "__start__").
+async function send(text, silent) {
+  removeChips();
+  if (!silent) addMsg(text, 'me');
+  setBusy(true);
+  showTyping();
+  try {
+    // Request to the backend: chat_turn() in main.py generates the reply.
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({session_id: sid, message: text})
+    });
+    if (!res.ok) throw new Error('Server error ' + res.status);
+    const data = await res.json();
+    removeTyping();
+    // BOT REPLY is displayed here, followed by its option buttons.
+    addMsg(data.reply, 'bot');
+    addChips(data.options);
+  } catch(e) {
+    removeTyping();
+    // Shown if the request fails (server down, network error, etc.).
+    addMsg('Sorry, something went wrong. Please try again.', 'bot');
+    console.error(e);
+  }
+  setBusy(false);
+}
+
+// ── events ─────────────────────────────────────────────────────────────────
+// EVENTS: press Enter in the text box to send the message.
+inp.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    const t = inp.value.trim();
+    if (t) { inp.value = ''; send(t); }
+  }
+});
+// Click the send button to send the message.
+sendBtn.addEventListener('click', () => {
+  const t = inp.value.trim();
+  if (t) { inp.value = ''; send(t); }
+});
+
+// kick off
+// On page load, automatically ask the backend for the welcome message.
+send('__start__', true);
+</script>
+</body>
+</html>

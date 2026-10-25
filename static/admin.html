@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin - Hospital bookings</title>
+<style>
+  /* COLOR THEME: variables for the light theme. */
+  :root {
+    --bg: #eef4f4; --card: #ffffff; --ink: #1c2b2d; --muted: #5d7275; --brand: #0f766e;
+    --brand-dark: #0b5a54; --line: #d3e0e0; --danger: #b42318; --ok-bg: #dcf3ef; --off-bg: #f6e2df;
+  }
+  /* Dark theme colors (applied automatically if the device is in dark mode). */
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1a1b; --card: #162426; --ink: #e6efef; --muted: #93a9ac; --brand: #2fb5a8;
+            --brand-dark: #27a094; --line: #2a4144; --danger: #ff8a7d; --ok-bg: #1d3d3a; --off-bg: #4a2724; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+  .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; }
+  h1 { font-size: 1.25rem; margin: 0; }
+  h2 { font-size: 1rem; margin: 0 0 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  /* Tab buttons (Doctors / Bookings / Departments) and their active state. */
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--card);
+         color: var(--ink); cursor: pointer; font-family: inherit; font-size: .9rem; }
+  .tab.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+  label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 4px; }
+  input, select, textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px;
+                            background: var(--card); color: var(--ink); font-family: inherit; font-size: .9rem; }
+  textarea { resize: vertical; min-height: 64px; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .full { grid-column: 1 / -1; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
+  .check input { width: auto; }
+  .check label { margin: 0; color: var(--ink); }
+  .btn { padding: 9px 16px; border-radius: 8px; border: 0; background: var(--brand); color: #fff; cursor: pointer;
+         font-family: inherit; font-size: .88rem; }
+  .btn:hover { background: var(--brand-dark); }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  .btn.ghost:hover { background: var(--bg); }
+  .btn.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .btn.sm { padding: 5px 10px; font-size: .8rem; }
+  .row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  /* Small status label (Available / Unavailable) used in the doctors table. */
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .78rem; background: var(--ok-bg); }
+  .badge.off { background: var(--off-bg); }
+  .filters { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 12px; }
+  .filters > div { min-width: 170px; }
+  .muted { color: var(--muted); }
+  /* Helper class: hides an element. Used to switch between login screen, panel and tabs. */
+  .hidden { display: none !important; }
+  #login { max-width: 360px; margin: 14vh auto 0; }
+  .error { color: var(--danger); font-size: .85rem; margin-top: 8px; min-height: 1.2em; }
+  /* Toast: small popup message at the bottom of the screen (success / error notices). */
+  .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+           padding: 10px 16px; border-radius: 8px; font-size: .88rem; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN: shown when the admin is not logged in. -->
+<div id="login" class="card hidden">
+  <h1>Admin login</h1>
+  <p class="muted">Enter the admin password to manage doctors and bookings.</p>
+  <form id="loginForm">
+    <label for="pw">Password</label>
+    <input id="pw" type="password" autocomplete="current-password" required>
+    <div class="error" id="loginErr"></div>
+    <div class="row"><button class="btn" type="submit">Log in</button></div>
+  </form>
+</div>
+
+<!-- ADMIN PANEL: shown after login. Contains the three tabs below. -->
+<div id="panel" class="wrap hidden">
+  <div class="top">
+    <h1>Hospital admin</h1>
+    <button class="btn ghost" id="logout">Log out</button>
+  </div>
+
+  <!-- Tab buttons - data-tab decides which section is displayed. -->
+  <div class="tabs">
+    <button class="tab active" data-tab="doctors">Doctors</button>
+    <button class="tab" data-tab="appointments">Bookings</button>
+    <button class="tab" data-tab="departments">Departments</button>
+  </div>
+
+  <!-- DOCTORS -->
+  <!-- DOCTORS TAB: form to add / edit a doctor + table of all doctors. -->
+  <section id="tab-doctors">
+    <div class="card">
+      <h2 id="formTitle">Add doctor</h2>
+      <form id="doctorForm">
+        <div class="grid">
+          <div><label for="dName">Doctor name</label><input id="dName" required minlength="2" maxlength="100"></div>
+          <div><label for="dDept">Department</label><select id="dDept" required></select></div>
+          <div><label for="dQual">Qualification</label><input id="dQual" maxlength="150" placeholder="MBBS, MD"></div>
+          <div><label for="dExp">Experience (years)</label><input id="dExp" type="number" min="0" max="70" value="0"></div>
+          <div class="full"><label for="dDetails">Details</label><textarea id="dDetails" placeholder="Speciality, what they treat..."></textarea></div>
+          <div class="check"><input id="dAvail" type="checkbox" checked><label for="dAvail">Available for booking</label></div>
+        </div>
+        <div class="row">
+          <button class="btn" type="submit" id="saveDoctor">Add doctor</button>
+          <button class="btn ghost hidden" type="button" id="cancelEdit">Cancel edit</button>
+        </div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>All doctors</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Name</th><th>Department</th><th>Qualification</th><th>Exp</th><th>Details</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="doctorRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- APPOINTMENTS -->
+  <!-- BOOKINGS TAB: filters (date, status) + table of all appointments; status can be changed from the table. -->
+  <section id="tab-appointments" class="hidden">
+    <div class="card">
+      <h2>Bookings <span class="muted" id="apptCount"></span></h2>
+      <div class="filters">
+        <div><label for="fDate">Date</label><input id="fDate" type="date"></div>
+        <div><label for="fStatus">Status</label>
+          <select id="fStatus"><option value="">All</option><option>booked</option><option>completed</option><option>cancelled</option></select></div>
+        <button class="btn ghost" id="clearFilters" type="button">Clear filters</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>ID</th><th>Patient</th><th>Phone</th><th>Email</th><th>Doctor</th><th>Department</th><th>Date</th><th>Time</th><th>Status</th></tr></thead>
+          <tbody id="apptRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEPARTMENTS -->
+  <!-- DEPARTMENTS TAB: add a department + table of all departments. -->
+  <section id="tab-departments" class="hidden">
+    <div class="card">
+      <h2>Add department</h2>
+      <form id="deptForm" class="filters">
+        <div><label for="deptName">Department name</label><input id="deptName" required minlength="2" maxlength="100"></div>
+        <button class="btn" type="submit">Add department</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>All departments</h2>
+      <table>
+        <thead><tr><th>Name</th><th>Doctors</th><th>Actions</th></tr></thead>
+        <tbody id="deptRows"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- Element used by toast() to show notifications. -->
+<div class="toast" id="toast" role="status"></div>
+
+<!-- JAVASCRIPT: all admin page behavior (calls the /api/admin/... routes in main.py). -->
+<script>
+// Shortcut: $('id') = document.getElementById('id'). token = admin login token (kept in sessionStorage).
+const $ = id => document.getElementById(id);
+let token = null;
+try { token = sessionStorage.getItem('adminToken'); } catch (e) {}
+let departments = [], doctors = [], editingId = null;
+
+// Escapes special characters before putting database text into HTML (prevents HTML injection).
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Shows a short notification message for 2.4 seconds.
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+// API HELPER: every call to the backend goes through here. Adds the X-Admin-Token header,
+// sends JSON, shows the login screen again if the server answers 401 (not logged in / expired),
+// and turns server errors into readable messages.
+async function api(path, method = 'GET', body) {
+  const res = await fetch('/api/admin' + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token || '' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (res.status === 401 && path !== '/login') { showLogin(); throw new Error('Please log in again.'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const d = data.detail;
+    throw new Error(typeof d === 'string' ? d : 'Something went wrong. Check the values and try again.');
+  }
+  return data;
+}
+
+// Switch to the login screen and forget the token.
+function showLogin() {
+  token = null; try { sessionStorage.removeItem('adminToken'); } catch (e) {}
+  $('panel').classList.add('hidden'); $('login').classList.remove('hidden');
+}
+// Switch to the admin panel and load departments, doctors and appointments from the database.
+async function showPanel() {
+  $('login').classList.add('hidden'); $('panel').classList.remove('hidden');
+  await loadDepartments(); await loadDoctors(); await loadAppointments();
+}
+
+// LOGIN: sends the password to /api/admin/login and stores the returned token.
+$('loginForm').addEventListener('submit', async e => {
+  e.preventDefault(); $('loginErr').textContent = '';
+  try {
+    const r = await api('/login', 'POST', { password: $('pw').value });
+    token = r.token; try { sessionStorage.setItem('adminToken', token); } catch (e) {}
+    $('pw').value = ''; showPanel();
+  } catch (err) { $('loginErr').textContent = err.message; }
+});
+// LOGOUT button.
+$('logout').onclick = showLogin;
+
+// TABS: clicking a tab shows its section and hides the others.
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+  ['doctors', 'appointments', 'departments'].forEach(n => $('tab-' + n).classList.toggle('hidden', n !== t.dataset.tab));
+  if (t.dataset.tab === 'appointments') loadAppointments();
+});
+
+/* ---------- Departments ---------- */
+// DEPARTMENTS: loads from the database, fills the department dropdown (doctor form) and the departments table.
+async function loadDepartments() {
+  departments = await api('/departments');
+  $('dDept').innerHTML = departments.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+  $('deptRows').innerHTML = departments.map(d => `
+    <tr><td>${esc(d.name)}</td><td>${d.doctors}</td>
+    <td><button class="btn danger sm" data-del-dept="${d.id}">Delete</button></td></tr>`).join('')
+    || '<tr><td colspan="3" class="muted">No departments yet. Add one above.</td></tr>';
+}
+// Add department form -> POST /api/admin/departments.
+$('deptForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try { await api('/departments', 'POST', { name: $('deptName').value }); $('deptName').value = ''; toast('Department added'); await loadDepartments(); }
+  catch (err) { toast(err.message); }
+});
+// Delete department button -> DELETE /api/admin/departments/{id}.
+$('deptRows').addEventListener('click', async e => {
+  const id = e.target.dataset.delDept; if (!id) return;
+  if (!confirm('Delete this department?')) return;
+  try { await api('/departments/' + id, 'DELETE'); toast('Department deleted'); await loadDepartments(); }
+  catch (err) { toast(err.message); }
+});
+
+/* ---------- Doctors ---------- */
+// DOCTORS: loads all doctors from the database and draws the doctors table with action buttons.
+async function loadDoctors() {
+  doctors = await api('/doctors');
+  $('doctorRows').innerHTML = doctors.map(d => `
+    <tr>
+      <td>${esc(d.name)}</td><td>${esc(d.department)}</td><td>${esc(d.qualification)}</td><td>${d.experience_years} yrs</td>
+      <td>${esc(d.details)}</td>
+      <td><span class="badge ${d.available ? '' : 'off'}">${d.available ? 'Available' : 'Unavailable'}</span></td>
+      <td>
+        <button class="btn ghost sm" data-toggle="${d.id}">${d.available ? 'Mark unavailable' : 'Mark available'}</button>
+        <button class="btn ghost sm" data-edit="${d.id}">Edit</button>
+        <button class="btn danger sm" data-del="${d.id}">Delete</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="7" class="muted">No doctors yet. Add one above.</td></tr>';
+}
+
+// Clears the doctor form and switches it back from 'Edit' mode to 'Add' mode.
+function resetDoctorForm() {
+  editingId = null; $('doctorForm').reset(); $('dAvail').checked = true;
+  $('formTitle').textContent = 'Add doctor'; $('saveDoctor').textContent = 'Add doctor';
+  $('cancelEdit').classList.add('hidden');
+}
+$('cancelEdit').onclick = resetDoctorForm;
+
+// Add / edit doctor form: POST (new) or PUT (when editingId is set) to /api/admin/doctors.
+$('doctorForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {
+    name: $('dName').value, department_id: Number($('dDept').value), qualification: $('dQual').value,
+    experience_years: Number($('dExp').value || 0), details: $('dDetails').value, available: $('dAvail').checked
+  };
+  try {
+    if (editingId) await api('/doctors/' + editingId, 'PUT', body); else await api('/doctors', 'POST', body);
+    toast(editingId ? 'Doctor updated' : 'Doctor added');
+    resetDoctorForm(); await loadDoctors(); await loadDepartments();
+  } catch (err) { toast(err.message); }
+});
+
+// Doctor table buttons: toggle availability, edit (fills the form), or delete.
+$('doctorRows').addEventListener('click', async e => {
+  const t = e.target;
+  try {
+    if (t.dataset.toggle) {
+      const d = doctors.find(x => x.id == t.dataset.toggle);
+      await api(`/doctors/${d.id}/availability`, 'PATCH', { available: !d.available });
+      toast('Availability updated'); await loadDoctors();
+    } else if (t.dataset.edit) {
+      const d = doctors.find(x => x.id == t.dataset.edit);
+      editingId = d.id;
+      $('dName').value = d.name; $('dDept').value = d.department_id; $('dQual').value = d.qualification;
+      $('dExp').value = d.experience_years; $('dDetails').value = d.details; $('dAvail').checked = d.available;
+      $('formTitle').textContent = 'Edit doctor'; $('saveDoctor').textContent = 'Save changes';
+      $('cancelEdit').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (t.dataset.del) {
+      if (!confirm('Delete this doctor?')) return;
+      await api('/doctors/' + t.dataset.del, 'DELETE'); toast('Doctor deleted');
+      await loadDoctors(); await loadDepartments();
+    }
+  } catch (err) { toast(err.message); }
+});
+
+/* ---------- Appointments ---------- */
+// BOOKINGS: loads appointments (with the date/status filters) and draws the bookings table.
+async function loadAppointments() {
+  const params = new URLSearchParams({ date: $('fDate').value, status: $('fStatus').value });
+  const rows = await api('/appointments?' + params);
+  $('apptCount').textContent = `(${rows.length})`;
+  $('apptRows').innerHTML = rows.map(a => `
+    <tr>
+      <td>#${a.id}</td><td>${esc(a.patient_name)}</td><td>${esc(a.phone)}</td><td>${esc(a.email)}</td>
+      <td>${esc(a.doctor)}</td><td>${esc(a.department)}</td><td>${esc(a.appointment_date)}</td><td>${esc(a.time_slot)}</td>
+      <td><select data-status="${a.id}" aria-label="Status for booking ${a.id}">
+        ${['booked', 'completed', 'cancelled'].map(s => `<option ${s === a.status ? 'selected' : ''}>${s}</option>`).join('')}
+      </select></td>
+    </tr>`).join('') || '<tr><td colspan="9" class="muted">No bookings found.</td></tr>';
+}
+// Reload the bookings table whenever a filter changes.
+$('fDate').onchange = $('fStatus').onchange = () => loadAppointments().catch(e => toast(e.message));
+// Reset both filters.
+$('clearFilters').onclick = () => { $('fDate').value = ''; $('fStatus').value = ''; loadAppointments(); };
+// Changing the status dropdown in a row -> PATCH /api/admin/appointments/{id}.
+$('apptRows').addEventListener('change', async e => {
+  const id = e.target.dataset.status; if (!id) return;
+  try { await api('/appointments/' + id, 'PATCH', { status: e.target.value }); toast('Status updated'); }
+  catch (err) { toast(err.message); loadAppointments(); }
+});
+
+// On page load: if a saved token exists show the panel, otherwise show the login screen.
+if (token) showPanel().catch(showLogin); else showLogin();
+</script>
+</body>
+</html>
